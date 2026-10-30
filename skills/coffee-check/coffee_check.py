@@ -20,7 +20,7 @@ from datetime import datetime, timedelta, timezone
 STATE = os.path.expanduser(
     os.environ.get("COFFEE_CHECK_STATE", "~/.claude/productivity/coffee-check.json"))
 MAX_SAMPLES = 200
-MIN_SAMPLES = 10
+MIN_SAMPLES = 1
 THRESHOLD = 0.7          # unproductive when score < 70% of mean
 ASK_HOURS = range(7, 15)  # 7:00 AM through the 2:00 PM run, local time
 

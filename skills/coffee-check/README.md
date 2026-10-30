@@ -16,7 +16,7 @@ Score for the last 60 minutes = sum of:
 
 It keeps the last 200 hourly scores in a local JSON file and compares each hour to their mean.
 It only records samples and asks between 7:00 AM and 2:00 PM local time, Monday–Friday.
-It stays silent until it has 10 samples, about 1.5 workdays.
+It starts comparing after the first recorded hour, so early averages are noisy.
 
 ## Requirements
 
@@ -95,7 +95,7 @@ Environment variables (set them in `run.sh` or your scheduler):
 - `COFFEE_CHECK_STATE`: state file path.
 
 Thresholds are constants at the top of `coffee_check.py`: `THRESHOLD` (0.7), `ASK_HOURS`
-(7–14), `MIN_SAMPLES` (10), `MAX_SAMPLES` (200). Timezone is your system's local time.
+(7–14), `MIN_SAMPLES` (1), `MAX_SAMPLES` (200). Timezone is your system's local time.
 
 ## Privacy and cost
 
