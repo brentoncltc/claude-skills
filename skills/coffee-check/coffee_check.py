@@ -9,6 +9,7 @@
 
 Uses the system's local timezone. Set COFFEE_CHECK_GH_LOGIN to skip the
 `gh api user` lookup, and COFFEE_CHECK_STATE to move the state file.
+If garmin.py is set up (.venv plus saved tokens), Garmin readings shape the nudge.
 """
 import argparse
 import json
@@ -16,6 +17,7 @@ import os
 import subprocess
 import sys
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 STATE = os.path.expanduser(
     os.environ.get("COFFEE_CHECK_STATE", "~/.claude/productivity/coffee-check.json"))
@@ -23,6 +25,15 @@ MAX_SAMPLES = 200
 MIN_SAMPLES = 1
 THRESHOLD = 0.7          # unproductive when score < 70% of mean
 ASK_HOURS = range(7, 15)  # 7:00 AM through the 2:00 PM run, local time
+NO_CELSIUS_FROM = 12      # no Celsius suggestions from noon on (sleep)
+WIRED_STRESS = 50         # Garmin stress average above this = wired
+WIRED_HR_OVER_RHR = 20    # or average HR this far above resting HR
+TIRED_BODY_BATTERY = 30   # Body Battery below this = tired
+MIN_READINGS = 5          # fewer Garmin readings in the window = ignore them
+
+HERE = Path(__file__).resolve().parent
+GARMIN_PY = HERE / ".venv" / "bin" / "python"
+GARMIN_TOKENS = Path(os.path.expanduser(os.environ.get("GARMINTOKENS", "~/.garminconnect")))
 
 
 def parse(ts):
@@ -79,6 +90,39 @@ def github_counts(start, end):
     return {"prs_created": created, "prs_reviewed": len(reviewed), "prs_merged": merged}
 
 
+def garmin_readings(start, end):
+    """Garmin readings for the window, None if not set up, or {"error": ...}."""
+    if not (GARMIN_PY.exists() and GARMIN_TOKENS.exists()):
+        return None
+    try:
+        r = subprocess.run(
+            [str(GARMIN_PY), str(HERE / "garmin.py"), "window", "--start", start, "--end", end],
+            capture_output=True, text=True, timeout=90)
+        data = json.loads(r.stdout)
+    except Exception as e:
+        return {"error": f"{type(e).__name__}: {e}"}
+    return data if data.get("ok") else {"error": data.get("error", "unknown")}
+
+
+def nudge(score, mean, g, end_local):
+    head = f"Last hour: {score} vs your average of {mean:.1f}."
+    caffeine = ("Need a coffee? Or maybe a Celsius?" if end_local.hour < NO_CELSIUS_FROM
+                else "Need a coffee?")
+    g = g if g and "error" not in g else {}
+    hr_ok = (g.get("hr_readings") or 0) >= MIN_READINGS
+    stress_ok = (g.get("stress_readings") or 0) >= MIN_READINGS
+    hr, rhr, stress, bb = g.get("hr_avg"), g.get("rhr"), g.get("stress_avg"), g.get("body_battery")
+
+    if (stress_ok and stress > WIRED_STRESS) or (hr_ok and rhr and hr >= rhr + WIRED_HR_OVER_RHR):
+        detail = ", ".join(x for x in (
+            f"heart rate {hr} bpm (resting {rhr})" if hr_ok and rhr else "",
+            f"stress {stress}" if stress_ok else "") if x)
+        return f"{head} {detail[0].upper()}{detail[1:]}. You're wired, not tired. Water and a walk?"
+    if bb is not None and bb < TIRED_BODY_BATTERY:
+        return f"{head} Body Battery's at {bb}. {caffeine}"
+    return f"{head} {caffeine}"
+
+
 def load_state():
     if not os.path.exists(STATE):
         return {"samples": [], "updated": None}
@@ -98,6 +142,7 @@ def cmd_record(args):
     start, end = parse(args.start), parse(args.end)
     counts = github_counts(start, end)
     score = sum(counts.values()) + args.emails
+    garmin = garmin_readings(args.start, args.end)
 
     end_local = end.astimezone()
     in_window = end_local.weekday() < 5 and end_local.hour in ASK_HOURS
@@ -113,7 +158,8 @@ def cmd_record(args):
     if not in_window:
         verdict, ask = "outside_window_not_recorded", False
     else:
-        samples.append({"ts": args.end, "score": score, "gh": counts, "emails_sent": args.emails})
+        samples.append({"ts": args.end, "score": score, "gh": counts,
+                        "emails_sent": args.emails, "garmin": garmin})
         state["samples"] = samples[-MAX_SAMPLES:]
         state["updated"] = datetime.now(timezone.utc).isoformat()
         save_state(state)
@@ -129,7 +175,9 @@ def cmd_record(args):
     print(json.dumps({
         "ok": True, "score": score, "mean": round(mean, 2),
         "threshold": round(THRESHOLD * mean, 2), "prior_samples": len(prior),
-        "gh": counts, "emails_sent": args.emails, "verdict": verdict, "ask": ask,
+        "gh": counts, "emails_sent": args.emails, "garmin": garmin,
+        "verdict": verdict, "ask": ask,
+        "message": nudge(score, mean, garmin, end_local) if ask else None,
     }))
 
 

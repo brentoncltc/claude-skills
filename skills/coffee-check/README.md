@@ -14,6 +14,16 @@ Score for the last 60 minutes = sum of:
 - GitHub PRs you **merged**
 - Microsoft 365 emails you **sent**
 
+With a Garmin watch connected (optional, below), the nudge changes with how you feel:
+
+| Garmin says | Nudge |
+|---|---|
+| Stress above 50, or heart rate 20+ bpm over resting | "You're wired, not tired. Water and a walk?" |
+| Body Battery below 30 | "Body Battery's at 22. Need a coffee? Or maybe a Celsius?" |
+| Neither, or no Garmin | "Need a coffee? Or maybe a Celsius?" |
+
+No Celsius after noon: from 12:00 on it only offers coffee.
+
 It keeps the last 200 hourly scores in a local JSON file and compares each hour to their mean.
 It only records samples and asks between 7:00 AM and 2:00 PM local time, Monday–Friday.
 It starts comparing after the first recorded hour, so early averages are noisy.
@@ -53,6 +63,32 @@ Test it once by hand. It records a sample if you're inside the 7a–2p weekday w
 ~/.claude/skills/coffee-check/notify.sh "Coffee check" "Test notification"
 ```
 
+## Garmin (optional)
+
+Uses the unofficial [`garminconnect`](https://github.com/cyberjunky/python-garminconnect)
+library against your own Garmin Connect account. It's not a Garmin-supported API and can
+break when Garmin changes things. Data is only as fresh as your watch's last sync through the
+phone app, so the last few minutes of an hour are often missing.
+
+```bash
+cd ~/.claude/skills/coffee-check
+python3 -m venv .venv && .venv/bin/pip install garminconnect
+.venv/bin/python garmin.py login     # interactive: email, password, MFA code
+```
+
+`login` saves refreshable tokens to `~/.garminconnect` (owner-only permissions; set
+`GARMINTOKENS` to move them). Your password is not stored. Once the tokens exist,
+`coffee_check.py` uses Garmin automatically. Delete the folder to turn it off.
+Test with:
+
+```bash
+.venv/bin/python garmin.py window --start 2026-01-05T14:00:00Z --end 2026-01-05T15:00:00Z
+```
+
+Thresholds (`WIRED_STRESS`, `WIRED_HR_OVER_RHR`, `TIRED_BODY_BATTERY`, `NO_CELSIUS_FROM`) are
+constants at the top of `coffee_check.py`. If Garmin fails, the check runs without it and logs
+`garmin_error=...`.
+
 ## Schedule it
 
 ### Windows + WSL (Task Scheduler)
@@ -82,6 +118,7 @@ On macOS, `notify.sh` uses `osascript`; on Linux, `notify-send`.
 |---|---|
 | `SKILL.md` | Steps Claude follows on `/coffee-check` |
 | `coffee_check.py` | Time window, GitHub counts, mean and threshold, state file |
+| `garmin.py` | Optional Garmin login and heart rate / stress / Body Battery readings |
 | `notify.sh` | Desktop notification (WSL, macOS, Linux) |
 | `run.sh` | Scheduler entry point: `claude -p /coffee-check` with a narrow tool allowlist |
 
@@ -99,7 +136,8 @@ Thresholds are constants at the top of `coffee_check.py`: `THRESHOLD` (0.7), `AS
 
 ## Privacy and cost
 
-- Stores counts only, never email subjects, recipients or PR titles.
+- Stores counts only, never email subjects, recipients or PR titles. With Garmin, it also
+  stores the hour's average heart rate, stress and Body Battery.
 - Read-only: it never sends, posts or changes anything in GitHub or Microsoft 365.
 - `run.sh` allows Claude only the two scripts, the skill and the Outlook search tool.
 - Each run is one headless Claude Code session on your account: 8 a day on weekdays.
