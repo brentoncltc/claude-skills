@@ -12,5 +12,6 @@ cd "$(dirname "$log")"
     "Skill(coffee-check)" \
     "Bash(python3 ~/.claude/skills/coffee-check/coffee_check.py:*)" \
     "Bash(~/.claude/skills/coffee-check/notify.sh:*)" \
-    "mcp__claude_ai_Microsoft_365__outlook_email_search"
+    "mcp__claude_ai_Microsoft_365__outlook_email_search" \
+    "mcp__claude_ai_Akiflow__get_schedule"
 } >>"$log" 2>&1

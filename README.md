@@ -4,7 +4,7 @@ Public [Claude Code skills](https://docs.claude.com/en/docs/claude-code/skills) 
 
 | Skill | What it does |
 |---|---|
-| [coffee-check](skills/coffee-check/) | Hourly check of GitHub PR activity and sent email against your average. Asks if you need coffee when you're lagging. |
+| [coffee-check](skills/coffee-check/) | Hourly check of GitHub PR activity, sent email and Akiflow tasks against your average, with optional Garmin heart rate. Asks if you need coffee when you're lagging. |
 
 ## Using a skill
 

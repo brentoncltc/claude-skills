@@ -13,6 +13,7 @@ Score for the last 60 minutes = sum of:
 - GitHub PRs you **reviewed** (one per PR)
 - GitHub PRs you **merged**
 - Microsoft 365 emails you **sent**
+- Akiflow tasks you **completed**, except in a project named "Personal" (optional)
 
 With a Garmin watch connected (optional, below), the nudge changes with how you feel:
 
@@ -34,6 +35,7 @@ It starts comparing after the first recorded hour, so early averages are noisy.
 |---|---|---|
 | [Claude Code](https://docs.claude.com/en/docs/claude-code) CLI, signed in with a claude.ai account | Runs the check headless (`claude -p`) | `claude --version` |
 | Microsoft 365 connector enabled on your claude.ai account | Counts sent emails | Ask Claude Code to call the Microsoft 365 `get_me` tool |
+| Akiflow connector on your claude.ai account (optional) | Counts tasks completed; counts 0 without it | Ask Claude Code to call the Akiflow `get_user_context` tool |
 | [GitHub CLI](https://cli.github.com/), authenticated | Reads your GitHub activity | `gh auth status` |
 | Python 3.9+ | Scoring and state | `python3 --version` |
 | A scheduler that runs on your machine | Hourly runs | see below |
@@ -44,6 +46,11 @@ sandbox that can't reach your `gh` login, your local files, or WSL.
 
 GitHub counts come from your public events feed plus private events your `gh` token can see.
 GitHub can delay events by a few minutes, occasionally longer.
+
+Akiflow's tool filters completed tasks by the date they were scheduled, not the date you
+finished them. The check looks back 7 days, so a task scheduled more than a week ago or never
+scheduled (inbox only) isn't counted when you complete it. To count personal tasks too, change
+the "Personal" exclusion in `SKILL.md` step 3.
 
 ## Install
 
@@ -139,5 +146,6 @@ Thresholds are constants at the top of `coffee_check.py`: `THRESHOLD` (0.7), `AS
 - Stores counts only, never email subjects, recipients or PR titles. With Garmin, it also
   stores the hour's average heart rate, stress and Body Battery.
 - Read-only: it never sends, posts or changes anything in GitHub or Microsoft 365.
-- `run.sh` allows Claude only the two scripts, the skill and the Outlook search tool.
+- `run.sh` allows Claude only the two scripts, the skill, the Outlook search tool and the
+  Akiflow schedule reader.
 - Each run is one headless Claude Code session on your account: 8 a day on weekdays.

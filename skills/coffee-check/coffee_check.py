@@ -3,8 +3,8 @@
 
   coffee_check.py window
       Print the 60-minute window ending now (UTC and local time).
-  coffee_check.py record --start ISO --end ISO --emails N
-      Count GitHub PR activity in the window, add the sent-email count,
+  coffee_check.py record --start ISO --end ISO --emails N [--tasks N]
+      Count GitHub PR activity in the window, add sent emails and tasks completed,
       compare to the rolling mean, record the sample, print a JSON verdict.
 
 Uses the system's local timezone. Set COFFEE_CHECK_GH_LOGIN to skip the
@@ -141,7 +141,7 @@ def save_state(state):
 def cmd_record(args):
     start, end = parse(args.start), parse(args.end)
     counts = github_counts(start, end)
-    score = sum(counts.values()) + args.emails
+    score = sum(counts.values()) + args.emails + args.tasks
     garmin = garmin_readings(args.start, args.end)
 
     end_local = end.astimezone()
@@ -159,7 +159,7 @@ def cmd_record(args):
         verdict, ask = "outside_window_not_recorded", False
     else:
         samples.append({"ts": args.end, "score": score, "gh": counts,
-                        "emails_sent": args.emails, "garmin": garmin})
+                        "emails_sent": args.emails, "tasks_done": args.tasks, "garmin": garmin})
         state["samples"] = samples[-MAX_SAMPLES:]
         state["updated"] = datetime.now(timezone.utc).isoformat()
         save_state(state)
@@ -175,7 +175,7 @@ def cmd_record(args):
     print(json.dumps({
         "ok": True, "score": score, "mean": round(mean, 2),
         "threshold": round(THRESHOLD * mean, 2), "prior_samples": len(prior),
-        "gh": counts, "emails_sent": args.emails, "garmin": garmin,
+        "gh": counts, "emails_sent": args.emails, "tasks_done": args.tasks, "garmin": garmin,
         "verdict": verdict, "ask": ask,
         "message": nudge(score, mean, garmin, end_local) if ask else None,
     }))
@@ -189,6 +189,7 @@ def main():
     rec.add_argument("--start", required=True)
     rec.add_argument("--end", required=True)
     rec.add_argument("--emails", type=int, required=True)
+    rec.add_argument("--tasks", type=int, default=0, help="Akiflow tasks completed")
     args = ap.parse_args()
     cmd_window() if args.cmd == "window" else cmd_record(args)
 
