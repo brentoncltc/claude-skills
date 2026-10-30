@@ -22,9 +22,11 @@ below (they match the allowed-tools rules in run.sh). Do not use any other tools
    `python3 ~/.claude/skills/coffee-check/coffee_check.py record --start <start> --end <end> --emails <count>`
    If it prints `"ok": false`, print the error and stop.
 
-4. If the result has `"ask": true`, run:
-   `~/.claude/skills/coffee-check/notify.sh "Coffee check" "Last hour: <score> vs your average of <mean>. Need a coffee? Or maybe a Celsius?"`
+4. If the result has `"ask": true`, run with its `message` text verbatim:
+   `~/.claude/skills/coffee-check/notify.sh "Coffee check" "<message>"`
 
-5. End with one line: `coffee-check: score=<score> mean=<mean> verdict=<verdict>`.
+5. End with one line: `coffee-check: score=<score> mean=<mean> verdict=<verdict>`, plus
+   ` garmin=<hr_avg>bpm/stress <stress_avg>/bb <body_battery>` when `garmin` has readings, or
+   ` garmin_error=<error>` when it has an error. A Garmin error never stops the run.
 
 Read-only except for the state file. Never send email, post, or change anything in GitHub or M365.
