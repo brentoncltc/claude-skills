@@ -119,6 +119,11 @@ you're signed in, which is what lets the toast show. Remove it with
 
 On macOS, `notify.sh` uses `osascript`; on Linux, `notify-send`.
 
+On Windows the notification is reminder style: it stays on screen until you click Dismiss.
+Windows Do Not Disturb (on by default during calls and screen sharing) still holds it in the
+notification center (Win + N). To let it through, add Windows PowerShell under
+Settings → System → Notifications → Set priority notifications.
+
 ## Files
 
 | File | Role |

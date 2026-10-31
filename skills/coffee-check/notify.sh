@@ -1,18 +1,22 @@
 #!/usr/bin/env bash
 # Show a desktop notification. Usage: notify.sh "Title" "Message"
-# WSL: Windows toast via powershell.exe. macOS: osascript. Linux: notify-send.
+# WSL: Windows toast via powershell.exe, reminder style so it stays on screen until
+# dismissed. macOS: osascript. Linux: notify-send.
 set -euo pipefail
 ps=/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe
 
 if [ -x "$ps" ]; then
   title=${1//\'/\'\'}
   msg=${2//\'/\'\'}
+  # scenario='reminder' keeps the toast up; Windows only honors it when the toast has a button.
   script="
+\$ProgressPreference = 'SilentlyContinue'
 [Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] > \$null
-\$x = [Windows.UI.Notifications.ToastNotificationManager]::GetTemplateContent([Windows.UI.Notifications.ToastTemplateType]::ToastText02)
-\$t = \$x.GetElementsByTagName('text')
-\$t.Item(0).AppendChild(\$x.CreateTextNode('$title')) > \$null
-\$t.Item(1).AppendChild(\$x.CreateTextNode('$msg')) > \$null
+[Windows.Data.Xml.Dom.XmlDocument, Windows.Data.Xml.Dom.XmlDocument, ContentType = WindowsRuntime] > \$null
+\$title = [System.Security.SecurityElement]::Escape('$title')
+\$msg = [System.Security.SecurityElement]::Escape('$msg')
+\$x = New-Object Windows.Data.Xml.Dom.XmlDocument
+\$x.LoadXml(\"<toast scenario='reminder'><visual><binding template='ToastGeneric'><text>\$title</text><text>\$msg</text></binding></visual><actions><action activationType='system' arguments='dismiss' content=''/></actions></toast>\")
 \$app = '{1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\WindowsPowerShell\v1.0\powershell.exe'
 [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier(\$app).Show([Windows.UI.Notifications.ToastNotification]::new(\$x))
 "
