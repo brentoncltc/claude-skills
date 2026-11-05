@@ -23,10 +23,36 @@ With a Garmin watch connected (optional, below), the nudge changes with how you 
 | Body Battery below 30 | "Body Battery's at 22. Need a coffee? Or maybe a Celsius?" |
 | Neither, or no Garmin | "Need a coffee? Or maybe a Celsius?" |
 
-No Celsius after noon: from 12:00 on it only offers coffee.
+No Celsius after noon: from 12:00 on it only offers coffee. From 2:00 PM on, no caffeine at
+all: "No more caffeine, but maybe you need some metal or a kick in the @ss?"
 
 It keeps the last 200 hourly scores in a local JSON file and compares each hour to their mean.
-It only records samples and asks between 7:00 AM and 2:00 PM local time, Monday–Friday.
+It only records samples and asks between 7:00 AM and 4:00 PM local time, Monday–Friday.
+
+## History
+
+Every run also appends one JSON line to `~/.claude/productivity/coffee-check-history.jsonl`.
+That includes runs outside the 7a–4p window and runs that failed. The file is never trimmed,
+so use it for analysis. Each line has:
+
+- `run_at`, `start`, `end`, `end_local`, `weekday`, `hour_local`, `in_window`
+- `ok`, plus `error` when the run failed
+- On success: `recorded`, `score`, `gh`, `emails_sent`, `tasks_done`, `garmin`, `mean`,
+  `threshold`, `prior_samples`, `verdict`, `ask`, `message`
+
+To copy the samples already in the state file into history, run this once after upgrading.
+It skips samples that are already there, so a rerun is safe:
+
+```bash
+python3 ~/.claude/skills/coffee-check/coffee_check.py backfill
+```
+
+Lines with `"backfilled": true` came from the state file. Their `mean` is recomputed from
+earlier samples, and `run_at`, `verdict` and `message` are null.
+
+```bash
+python3 -c "import pandas as pd; print(pd.read_json('$HOME/.claude/productivity/coffee-check-history.jsonl', lines=True).describe())"
+```
 It starts comparing after the first recorded hour, so early averages are noisy.
 
 ## Requirements
@@ -103,7 +129,7 @@ constants at the top of `coffee_check.py`. If Garmin fails, the check runs witho
 From PowerShell or cmd on Windows. Replace `<distro>` (`wsl -l -v` lists them) and `<user>`:
 
 ```
-schtasks /create /tn "coffee-check" /sc weekly /d MON,TUE,WED,THU,FRI /st 07:00 /ri 60 /du 07:30 /f ^
+schtasks /create /tn "coffee-check" /sc weekly /d MON,TUE,WED,THU,FRI /st 07:00 /ri 60 /du 09:30 /f ^
   /tr "C:\Windows\System32\conhost.exe --headless C:\Windows\System32\wsl.exe -d <distro> -- /home/<user>/.claude/skills/coffee-check/run.sh"
 ```
 
@@ -114,7 +140,7 @@ you're signed in, which is what lets the toast show. Remove it with
 ### macOS / Linux (cron)
 
 ```
-0 7-14 * * 1-5 $HOME/.claude/skills/coffee-check/run.sh
+0 7-16 * * 1-5 $HOME/.claude/skills/coffee-check/run.sh
 ```
 
 On macOS, `notify.sh` uses `osascript`; on Linux, `notify-send`.
@@ -134,7 +160,8 @@ Settings → System → Notifications → Set priority notifications.
 | `notify.sh` | Desktop notification (WSL, macOS, Linux) |
 | `run.sh` | Scheduler entry point: `claude -p /coffee-check` with a narrow tool allowlist |
 
-State: `~/.claude/productivity/coffee-check.json`. Log: `~/.claude/productivity/coffee-check.log`.
+State: `~/.claude/productivity/coffee-check.json`. History:
+`~/.claude/productivity/coffee-check-history.jsonl`. Log: `~/.claude/productivity/coffee-check.log`.
 
 ## Settings
 
@@ -142,9 +169,10 @@ Environment variables (set them in `run.sh` or your scheduler):
 
 - `COFFEE_CHECK_GH_LOGIN`: your GitHub login. Default: looked up with `gh api user`.
 - `COFFEE_CHECK_STATE`: state file path.
+- `COFFEE_CHECK_HISTORY`: history file path.
 
 Thresholds are constants at the top of `coffee_check.py`: `THRESHOLD` (0.7), `ASK_HOURS`
-(7–14), `MIN_SAMPLES` (1), `MAX_SAMPLES` (200). Timezone is your system's local time.
+(7–16), `NO_CELSIUS_FROM` (12), `NO_CAFFEINE_FROM` (14), `MIN_SAMPLES` (1), `MAX_SAMPLES` (200). Timezone is your system's local time.
 
 ## Privacy and cost
 
@@ -153,4 +181,4 @@ Thresholds are constants at the top of `coffee_check.py`: `THRESHOLD` (0.7), `AS
 - Read-only: it never sends, posts or changes anything in GitHub or Microsoft 365.
 - `run.sh` allows Claude only the two scripts, the skill, the Outlook search tool and the
   Akiflow schedule reader.
-- Each run is one headless Claude Code session on your account: 8 a day on weekdays.
+- Each run is one headless Claude Code session on your account: 10 a day on weekdays.

@@ -15,8 +15,9 @@ below (they match the allowed-tools rules in run.sh). Do not use any other tools
    `folderName: "Sent Items"`, `afterDateTime: <start>`, `beforeDateTime: <end>`, `limit: 25`,
    `offset: 0`. No `query`, no `order`. Page with `nextOffset`/`nextCursor` until done.
    Count only messages whose sent/received time is inside the window.
-   If the search errors or the tool is unavailable, print "coffee-check: M365 failed: <reason>"
-   and stop. Do not record a sample.
+   If the search errors or the tool is unavailable, log it, print "coffee-check: M365 failed: <reason>"
+   and stop. Do not record a sample. To log it:
+   `python3 ~/.claude/skills/coffee-check/coffee_check.py error --start <start> --end <end> --reason "M365 failed: <reason>"`
 
 3. Count Akiflow tasks completed in the window with `mcp__claude_ai_Akiflow__get_schedule`:
    `start_date: <end_local date minus 7 days>`, `end_date: <end_local date>` (YYYY-MM-DD),
@@ -24,8 +25,8 @@ below (they match the allowed-tools rules in run.sh). Do not use any other tools
    date, so the 7-day lookback catches tasks finished late. Count tasks whose `done_at`
    (naive local time) is at or after `start_local` and before `end_local`, and whose
    `project_name` is not "Personal". If the tool is unavailable (not connected), use 0
-   and continue. If it errors, print "coffee-check: Akiflow failed: <reason>" and stop
-   without recording.
+   and continue. If it errors, log it the same way as step 2 with `--reason "Akiflow failed: <reason>"`,
+   print "coffee-check: Akiflow failed: <reason>" and stop without recording.
 
 4. Record and score:
    `python3 ~/.claude/skills/coffee-check/coffee_check.py record --start <start> --end <end> --emails <count> --tasks <count>`
@@ -38,4 +39,4 @@ below (they match the allowed-tools rules in run.sh). Do not use any other tools
    ` garmin=<hr_avg>bpm/stress <stress_avg>/bb <body_battery>` when `garmin` has readings, or
    ` garmin_error=<error>` when it has an error. A Garmin error never stops the run.
 
-Read-only except for the state file. Never send email, post, or change anything in GitHub or M365.
+Read-only except for the state and history files. Never send email, post, or change anything in GitHub or M365.
