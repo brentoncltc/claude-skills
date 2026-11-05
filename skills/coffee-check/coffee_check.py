@@ -6,6 +6,13 @@
   coffee_check.py record --start ISO --end ISO --emails N [--tasks N]
       Count GitHub PR activity in the window, add sent emails and tasks completed,
       compare to the rolling mean, record the sample, print a JSON verdict.
+  coffee_check.py error --start ISO --end ISO --reason TEXT
+      Log a run that failed before scoring (M365 or Akiflow error).
+  coffee_check.py backfill
+      Copy state-file samples missing from the history file into it. Safe to rerun.
+
+Every run, in or out of the ask window and including failures, appends one line
+to the history file (COFFEE_CHECK_HISTORY) for later analysis. It is never trimmed.
 
 Uses the system's local timezone. Set COFFEE_CHECK_GH_LOGIN to skip the
 `gh api user` lookup, and COFFEE_CHECK_STATE to move the state file.
@@ -21,11 +28,15 @@ from pathlib import Path
 
 STATE = os.path.expanduser(
     os.environ.get("COFFEE_CHECK_STATE", "~/.claude/productivity/coffee-check.json"))
+HISTORY = os.path.expanduser(
+    os.environ.get("COFFEE_CHECK_HISTORY", "~/.claude/productivity/coffee-check-history.jsonl"))
 MAX_SAMPLES = 200
 MIN_SAMPLES = 1
 THRESHOLD = 0.7          # unproductive when score < 70% of mean
-ASK_HOURS = range(7, 15)  # 7:00 AM through the 2:00 PM run, local time
+ASK_HOURS = range(7, 17)  # 7:00 AM through the 4:00 PM run, local time
 NO_CELSIUS_FROM = 12      # no Celsius suggestions from noon on (sleep)
+NO_CAFFEINE_FROM = 14     # no caffeine at all from 2:00 PM on
+NO_CAFFEINE = "No more caffeine, but maybe you need some metal or a kick in the @ss?"
 WIRED_STRESS = 50         # Garmin stress average above this = wired
 WIRED_HR_OVER_RHR = 20    # or average HR this far above resting HR
 TIRED_BODY_BATTERY = 30   # Body Battery below this = tired
@@ -40,6 +51,10 @@ def parse(ts):
     return datetime.fromisoformat(ts.replace("Z", "+00:00"))
 
 
+class CheckError(Exception):
+    pass
+
+
 def fail(msg):
     print(json.dumps({"ok": False, "error": msg}))
     sys.exit(2)
@@ -48,8 +63,31 @@ def fail(msg):
 def gh(*args):
     r = subprocess.run(["gh", *args], capture_output=True, text=True, timeout=60)
     if r.returncode != 0:
-        fail(f"gh {args[0]} failed: {r.stderr.strip()}")
+        raise CheckError(f"gh {args[0]} failed: {r.stderr.strip()}")
     return r.stdout
+
+
+def append_history(entry):
+    """One JSON line per run. Append-only; a history write failure never breaks the check."""
+    try:
+        os.makedirs(os.path.dirname(HISTORY), exist_ok=True)
+        with open(HISTORY, "a") as f:
+            f.write(json.dumps(entry) + "\n")
+    except OSError as e:
+        print(f"coffee-check: history write failed: {e}", file=sys.stderr)
+
+
+def run_info(start, end):
+    end_local = end.astimezone()
+    return {
+        "run_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "start": start.isoformat().replace("+00:00", "Z"),
+        "end": end.isoformat().replace("+00:00", "Z"),
+        "end_local": end_local.isoformat(),
+        "weekday": end_local.strftime("%a"),
+        "hour_local": end_local.hour,
+        "in_window": end_local.weekday() < 5 and end_local.hour in ASK_HOURS,
+    }
 
 
 def cmd_window():
@@ -106,8 +144,12 @@ def garmin_readings(start, end):
 
 def nudge(score, mean, g, end_local):
     head = f"Last hour: {score} vs your average of {mean:.1f}."
-    caffeine = ("Need a coffee? Or maybe a Celsius?" if end_local.hour < NO_CELSIUS_FROM
-                else "Need a coffee?")
+    if end_local.hour >= NO_CAFFEINE_FROM:
+        caffeine = NO_CAFFEINE
+    elif end_local.hour >= NO_CELSIUS_FROM:
+        caffeine = "Need a coffee?"
+    else:
+        caffeine = "Need a coffee? Or maybe a Celsius?"
     g = g if g and "error" not in g else {}
     hr_ok = (g.get("hr_readings") or 0) >= MIN_READINGS
     stress_ok = (g.get("stress_readings") or 0) >= MIN_READINGS
@@ -140,12 +182,18 @@ def save_state(state):
 
 def cmd_record(args):
     start, end = parse(args.start), parse(args.end)
-    counts = github_counts(start, end)
+    info = run_info(start, end)
+    try:
+        counts = github_counts(start, end)
+    except CheckError as e:
+        append_history({**info, "ok": False, "error": str(e),
+                        "emails_sent": args.emails, "tasks_done": args.tasks})
+        raise
     score = sum(counts.values()) + args.emails + args.tasks
     garmin = garmin_readings(args.start, args.end)
 
     end_local = end.astimezone()
-    in_window = end_local.weekday() < 5 and end_local.hour in ASK_HOURS
+    in_window = info["in_window"]
 
     state = load_state()
     samples = state["samples"]
@@ -172,13 +220,46 @@ def cmd_record(args):
         else:
             verdict, ask = "productive", False
 
-    print(json.dumps({
+    result = {
         "ok": True, "score": score, "mean": round(mean, 2),
         "threshold": round(THRESHOLD * mean, 2), "prior_samples": len(prior),
         "gh": counts, "emails_sent": args.emails, "tasks_done": args.tasks, "garmin": garmin,
         "verdict": verdict, "ask": ask,
         "message": nudge(score, mean, garmin, end_local) if ask else None,
-    }))
+    }
+    append_history({**info, "recorded": in_window, **result})
+    print(json.dumps(result))
+
+
+def cmd_error(args):
+    append_history({**run_info(parse(args.start), parse(args.end)),
+                    "ok": False, "error": args.reason})
+    print(json.dumps({"ok": True, "logged": args.reason}))
+
+
+def cmd_backfill():
+    seen = set()
+    if os.path.exists(HISTORY):
+        with open(HISTORY) as f:
+            seen = {json.loads(line).get("end") for line in f if line.strip()}
+    added, prior = 0, []
+    for smp in load_state()["samples"]:
+        end = parse(smp["ts"])
+        key = end.isoformat().replace("+00:00", "Z")
+        mean = sum(p["score"] for p in prior) / len(prior) if prior else 0.0
+        prior.append(smp)
+        if key in seen:
+            continue
+        info = run_info(end - timedelta(hours=1), end)
+        info["run_at"] = None
+        append_history({
+            **info, "recorded": True, "ok": True, "backfilled": True,
+            "score": smp["score"], "mean": round(mean, 2), "threshold": round(THRESHOLD * mean, 2),
+            "prior_samples": len(prior) - 1, "gh": smp.get("gh"),
+            "emails_sent": smp.get("emails_sent"), "tasks_done": smp.get("tasks_done"),
+            "garmin": smp.get("garmin"), "verdict": None, "ask": None, "message": None})
+        added += 1
+    print(json.dumps({"ok": True, "added": added}))
 
 
 def main():
@@ -190,8 +271,17 @@ def main():
     rec.add_argument("--end", required=True)
     rec.add_argument("--emails", type=int, required=True)
     rec.add_argument("--tasks", type=int, default=0, help="Akiflow tasks completed")
+    err = sub.add_parser("error")
+    err.add_argument("--start", required=True)
+    err.add_argument("--end", required=True)
+    err.add_argument("--reason", required=True)
+    sub.add_parser("backfill")
     args = ap.parse_args()
-    cmd_window() if args.cmd == "window" else cmd_record(args)
+    try:
+        {"window": lambda a: cmd_window(), "record": cmd_record, "error": cmd_error,
+         "backfill": lambda a: cmd_backfill()}[args.cmd](args)
+    except CheckError as e:
+        fail(str(e))
 
 
 if __name__ == "__main__":
