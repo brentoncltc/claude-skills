@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 """Hourly productivity check: GitHub PR activity + sent emails vs a rolling mean.
 
+Nudges toward coffee when an hour is 30% below the mean. Cheers (ataboy) when an hour is
+20% or more above it, and when the day's total crosses 10, 25, 50, 100, 150 or 200.
+
   coffee_check.py window
       Print the 60-minute window ending now (UTC and local time).
   coffee_check.py record --start ISO --end ISO --emails N [--tasks N]
@@ -21,6 +24,7 @@ If garmin.py is set up (.venv plus saved tokens), Garmin readings shape the nudg
 import argparse
 import json
 import os
+import random
 import subprocess
 import sys
 from datetime import datetime, timedelta, timezone
@@ -33,6 +37,8 @@ HISTORY = os.path.expanduser(
 MAX_SAMPLES = 200
 MIN_SAMPLES = 1
 THRESHOLD = 0.7          # unproductive when score < 70% of mean
+CHEER_THRESHOLD = 1.2    # ataboy when score >= 120% of mean
+DAILY_MILESTONES = (10, 25, 50, 100, 150, 200)  # things done in one local day
 ASK_HOURS = range(7, 17)  # 7:00 AM through the 4:00 PM run, local time
 NO_CELSIUS_FROM = 12      # no Celsius suggestions from noon on (sleep)
 NO_CAFFEINE_FROM = 14     # no caffeine at all from 2:00 PM on
@@ -165,6 +171,39 @@ def nudge(score, mean, g, end_local):
     return f"{head} {caffeine}"
 
 
+def hourly_cheer(score, mean):
+    pct = round((score / mean - 1) * 100)
+    return random.choice([
+        f"🔥 {score} things last hour, {pct}% over your {mean:.1f} average. Ataboy! 💪",
+        f"🚀 {score} vs your usual {mean:.1f}. That's {pct}% above. Keep rolling! 😎",
+        f"💪 {pct}% above average this hour ({score} vs {mean:.1f}). Ataboy! 🙌",
+    ])
+
+
+MILESTONE_FLAIR = {
+    10: "Warmed up. 👍",
+    25: "Solid day already. 💪",
+    50: "Half a hundred! 🔥",
+    100: "Triple digits! 🚀🚀",
+    150: "Absolute machine. 🤖⚡",
+    200: "Legendary. Go home. 🏆👑",
+}
+
+
+def milestone_cheer(milestone, total):
+    extra = f" ({total} so far)" if total != milestone else ""
+    return f"🎉 {milestone} things done today{extra}! Ataboy! {MILESTONE_FLAIR[milestone]}"
+
+
+def daily_milestone(state, today, total):
+    """Highest milestone newly reached today, or None. Marks every reached one as hit."""
+    seen = state.get("milestones") or {}
+    hit = set(seen.get("hit", [])) if seen.get("date") == today else set()
+    new = [m for m in DAILY_MILESTONES if total >= m and m not in hit]
+    state["milestones"] = {"date": today, "hit": sorted(hit | set(new))}
+    return max(new) if new else None
+
+
 def load_state():
     if not os.path.exists(STATE):
         return {"samples": [], "updated": None}
@@ -203,6 +242,7 @@ def cmd_record(args):
     prior = samples[-MAX_SAMPLES:]
     mean = sum(s["score"] for s in prior) / len(prior) if prior else 0.0
 
+    day_total, milestone = None, None
     if not in_window:
         verdict, ask = "outside_window_not_recorded", False
     else:
@@ -210,6 +250,10 @@ def cmd_record(args):
                         "emails_sent": args.emails, "tasks_done": args.tasks, "garmin": garmin})
         state["samples"] = samples[-MAX_SAMPLES:]
         state["updated"] = datetime.now(timezone.utc).isoformat()
+        today = end_local.date().isoformat()
+        day_total = sum(s["score"] for s in samples
+                        if parse(s["ts"]).astimezone().date().isoformat() == today)
+        milestone = daily_milestone(state, today, day_total)
         save_state(state)
         if len(prior) < MIN_SAMPLES:
             verdict, ask = "building_baseline", False
@@ -217,6 +261,8 @@ def cmd_record(args):
             verdict, ask = "mean_zero", False
         elif score < THRESHOLD * mean:
             verdict, ask = "unproductive", True
+        elif score >= CHEER_THRESHOLD * mean:
+            verdict, ask = "crushing_it", False
         else:
             verdict, ask = "productive", False
 
@@ -226,9 +272,17 @@ def cmd_record(args):
         "gh": counts, "emails_sent": args.emails, "tasks_done": args.tasks, "garmin": garmin,
         "verdict": verdict, "ask": ask,
         "message": nudge(score, mean, garmin, end_local) if ask else None,
+        "day_total": day_total, "milestone": milestone,
     }
+    cheers = []
+    if verdict == "crushing_it":
+        cheers.append(hourly_cheer(score, mean))
+    if milestone:
+        cheers.append(milestone_cheer(milestone, day_total))
+    result["cheer"] = bool(cheers)
+    result["cheer_message"] = " ".join(cheers) or None
     append_history({**info, "recorded": in_window, **result})
-    print(json.dumps(result))
+    print(json.dumps(result, ensure_ascii=False))
 
 
 def cmd_error(args):
