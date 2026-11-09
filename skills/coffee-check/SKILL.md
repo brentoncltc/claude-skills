@@ -1,6 +1,6 @@
 ---
 name: coffee-check
-description: Hourly productivity check. Counts GitHub PRs created/reviewed/merged, Microsoft 365 sent emails and Akiflow tasks completed in the last hour, compares to a rolling mean, and asks about coffee if more than 30% below it. Meant to run headless from a scheduler via run.sh.
+description: Hourly productivity check. Counts GitHub PRs created/reviewed/merged, Microsoft 365 sent emails and Akiflow tasks completed in the last hour, compares to a rolling mean, asks about coffee if more than 30% below it, and cheers when 20%+ above it or when the day's total hits 10/25/50/100/150/200. Meant to run headless from a scheduler via run.sh.
 disable-model-invocation: true
 ---
 
@@ -35,7 +35,12 @@ below (they match the allowed-tools rules in run.sh). Do not use any other tools
 5. If the result has `"ask": true`, run with its `message` text verbatim:
    `~/.claude/skills/coffee-check/notify.sh "Coffee check" "<message>"`
 
-6. End with one line: `coffee-check: score=<score> mean=<mean> verdict=<verdict> tasks=<tasks_done>`, plus
+6. If the result has `"cheer": true`, run with its `cheer_message` text verbatim, emoji included:
+   `~/.claude/skills/coffee-check/notify.sh "Ataboy!" "<cheer_message>"`
+   Steps 5 and 6 can both fire in one run.
+
+7. End with one line: `coffee-check: score=<score> mean=<mean> verdict=<verdict> tasks=<tasks_done> day=<day_total>`,
+   plus ` milestone=<milestone>` when it is not null, plus
    ` garmin=<hr_avg>bpm/stress <stress_avg>/bb <body_battery>` when `garmin` has readings, or
    ` garmin_error=<error>` when it has an error. A Garmin error never stops the run.
 

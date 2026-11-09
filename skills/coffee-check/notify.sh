@@ -20,7 +20,7 @@ if [ -x "$ps" ]; then
 \$app = '{1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\WindowsPowerShell\v1.0\powershell.exe'
 [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier(\$app).Show([Windows.UI.Notifications.ToastNotification]::new(\$x))
 "
-  "$ps" -NoProfile -NonInteractive -EncodedCommand "$(printf '%s' "$script" | iconv -t UTF-16LE | base64 -w0)"
+  "$ps" -NoProfile -NonInteractive -EncodedCommand "$(printf '%s' "$script" | iconv -f UTF-8 -t UTF-16LE | base64 -w0)"
 elif command -v osascript >/dev/null; then
   osascript -e 'on run argv' -e 'display notification (item 2 of argv) with title (item 1 of argv)' -e 'end run' "$1" "$2"
 elif command -v notify-send >/dev/null; then

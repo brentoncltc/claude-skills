@@ -26,6 +26,19 @@ With a Garmin watch connected (optional, below), the nudge changes with how you 
 No Celsius after noon: from 12:00 on it only offers coffee. From 2:00 PM on, no caffeine at
 all: "No more caffeine, but maybe you need some metal or a kick in the @ss?"
 
+## Ataboys
+
+Good hours get a cheer too, in a toast titled "Ataboy!":
+
+- **Hot hour:** score 20% or more above your average.
+  > 🔥 9 things last hour, 50% over your 6.0 average. Ataboy! 💪
+- **Daily milestones:** the day's total (sum of recorded hours) crosses 10, 25, 50, 100, 150
+  or 200. Each milestone fires once per day. If one hour jumps past two, you get the higher one.
+  > 🎉 25 things done today (27 so far)! Ataboy! Solid day already. 💪
+
+A slow hour can still trigger a milestone, so a run can show both a coffee nudge and an ataboy.
+Milestones reached today are stored under `milestones` in the state file.
+
 It keeps the last 200 hourly scores in a local JSON file and compares each hour to their mean.
 It only records samples and asks between 7:00 AM and 4:00 PM local time, Monday–Friday.
 
@@ -38,7 +51,8 @@ so use it for analysis. Each line has:
 - `run_at`, `start`, `end`, `end_local`, `weekday`, `hour_local`, `in_window`
 - `ok`, plus `error` when the run failed
 - On success: `recorded`, `score`, `gh`, `emails_sent`, `tasks_done`, `garmin`, `mean`,
-  `threshold`, `prior_samples`, `verdict`, `ask`, `message`
+  `threshold`, `prior_samples`, `verdict`, `ask`, `message`, `day_total`, `milestone`,
+  `cheer`, `cheer_message`
 
 To copy the samples already in the state file into history, run this once after upgrading.
 It skips samples that are already there, so a rerun is safe:
